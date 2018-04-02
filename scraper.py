@@ -1,4 +1,4 @@
-#!usr/bin/env python
+#!env/bin python
 #-*- coding: utf-8 -*-
 
 import requests
@@ -10,15 +10,20 @@ import re
 from pymongo import MongoClient
 
 client = MongoClient()
-db = client.cars
+db = client['used_cars']
 
 
-logging.basicConfig(filename='scrape.log', filemode='w', level='DEBUG')
+logging.basicConfig(level='DEBUG')
 
-BASE_URL = 'https://www.hasznaltauto.hu/auto/'
+BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto/'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'}
 MODELS = [
-    ('skoda', 'octavia')
+    ('skoda', 'octavia'),
+    ('opel', 'astra'),
+    ('ford', 'focus'),
+    ('volvo', 's40'),
+    ('volvo', 'v40'),
+    ()
 ]
 
 
@@ -28,7 +33,6 @@ def get_ad_links(brand, model):
     loop through them and save all the individual ad links to a txt file
     '''
     
-    ad_links = []
     # Initial page to get page numbers
     model_url = '{0}/{1}/{2}'.format(BASE_URL, brand, model)
     r = requests.get(model_url, headers=HEADERS)
@@ -41,28 +45,36 @@ def get_ad_links(brand, model):
         for page in range(1, last_page_number + 1):
             url = model_url + '/page{}'.format(page)
             ad_page = requests.get(url, headers=HEADERS)
+
             if ad_page.status_code == requests.codes.ok:
                 soup = BeautifulSoup(ad_page.text, 'lxml')
                 result_items = soup.find_all('div', class_='talalati_lista_head')
                 for result_item in result_items:
-                    link = result_item.find('a')
-                    ad_links.append(link.get('href'))
+                    link = result_item.find('a').get('href')
+                    db['links'].update_one({'url': link},
+                                           {'$setOnInsert': {'url': link,
+                                                             'brand': brand,
+                                                             'model': model,
+                                                             'inserted': date.today()
+                                                            }},
+                                           upsert=True)
             else:
                 logging.error('Cannot get {}'.format(url))
-
-        # Save ad links
-        filename = '{}_links.txt'.format(model)
-        with open(filename, 'w') as f:
-            for link in ad_links:
-                f.write(link + '\n')
     else:
         logging.error('Cannot get {}'.format(url))
 
 
 def get_car_details(url):
-    '''Extract car details from HTML and return data in dict'''
-    data = {}
-    data['Id'] = url.strip()[-8:]
+    '''
+    Extract car details from HTML and return data in dict
+    '''
+
+    data = {
+        'details': {},
+        'features': {},
+        'other': {}
+    }
+    data['id'] = url.strip()[-8:]
     data['url'] = url.strip()
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, 'lxml')
@@ -75,21 +87,46 @@ def get_car_details(url):
         key = cells[cell_index].text.strip()
         value = cells[cell_index + 1].text.strip()
         cleaned = clean_key_value(key, value)
-        data[cleaned[0]] = cleaned[1]
+        data['details'][cleaned[0]] = cleaned[1]
+
+    features = soup.find('div', class_='felszereltseg').find_all('li')
+    for feature in features:
+        data['features'][feature.text.strip()] = True
+
+    description = soup.find('div', class_='leiras').find('div').text.strip()
+    data['description'] = description
+
+    other_features = soup.find('div', class_='egyebinformacio').find_all('li')
+    for feature in other_features:
+        data['other'][feature.text.strip()] = True
+
     return data
 
 
 def clean_key_value(key, value):
-    '''Clean key-value pair'''
-    numeric_fields = ['Csomagtartó', 'Hengerűrtartalom', 'Kilométeróra állása', 'Saját tömeg', 'Szállítható szem. száma', 'Össztömeg', 'Vételár', 'Ár (EUR)']
+    '''
+    Clean key-value pair
+    '''
+
+    numeric_fields = [
+        'Csomagtartó',
+        'Hengerűrtartalom',
+        'Kilométeróra állása',
+        'Saját tömeg',
+        'Szállítható szem. száma',
+        'Össztömeg',
+        'Vételár',
+        'Ár (EUR)'
+    ]
     new_key = key[:-1]
     new_value = value
 
     if new_key in numeric_fields:
         value = re.sub('\xa0Ft', 'Ft', value)
-        value = re.sub('€\s', '', value)
+        value = re.sub(r'€\s', '', value)
         value = value.replace(' ', '').replace('.', '')
-        match = re.match('([0-9]*)(.*)?', value)
+
+        match = re.match(r'([0-9]*)(.*)?', value)
         if len(match.group(1)) > 0:
             new_value = int(match.group(1))
         else:
@@ -101,7 +138,7 @@ def clean_key_value(key, value):
         new_value = int(value)
 
     if new_key == 'Teljesítmény':
-        match = re.match('([0-9]{2,3})\skW,\s([0-9]{2,3})\sLE', value)
+        match = re.match(r'([0-9]{2,3})\skW,\s([0-9]{2,3})\sLE', value)
         new_value = int(match.group(2))
         new_key = new_key + ' (LE)'
 
@@ -109,7 +146,10 @@ def clean_key_value(key, value):
 
 
 def scrape(brand, model):
-    '''Loop through ad links and save data to MongoDB collection'''
+    '''
+    Loop through ad links and save data to MongoDB collection
+    '''
+
     filename = '{}_links.txt'.format(model)
     with open(filename, 'r') as links:
         for link in links:
