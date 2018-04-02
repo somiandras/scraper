@@ -3,3 +3,5 @@ scrape.log
 dictionary.json
 *.*workspace
 env
+__pycache__
+test.py
