@@ -8,8 +8,11 @@ from datetime import date
 from calendar import monthrange
 import re
 from pymongo import MongoClient
+import os
 
-db = MongoClient()['used_cars']
+MONGODB_URI = os.environ.get('MONGODB_URI')
+
+db = MongoClient(MONGODB_URI).get_database()
 
 logging.basicConfig(level='DEBUG')
 
@@ -34,7 +37,7 @@ def save_ad_links(brand, model):
     model_url = '{0}/{1}/{2}'.format(BASE_URL, brand, model)
     r = requests.get(model_url, headers=HEADERS)
     logging.debug('URL: {}, status: {}'.format(model_url, r.status_code))
-    if r.status_code == requests.codes.ok:
+    if r.status_code == requests.codes['ok']:
         soup = BeautifulSoup(r.text, 'lxml')
         last_page_number = int(soup.find(title='Utolsó oldal').text)
 
@@ -43,7 +46,7 @@ def save_ad_links(brand, model):
             url = model_url + '/page{}'.format(page)
             ad_page = requests.get(url, headers=HEADERS)
 
-            if ad_page.status_code == requests.codes.ok:
+            if ad_page.status_code == requests.codes['ok']:
                 soup = BeautifulSoup(ad_page.text, 'lxml')
                 result_items = soup.find_all('div', class_='talalati_lista_head')
                 for result_item in result_items:

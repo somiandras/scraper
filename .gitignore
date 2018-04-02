@@ -4,3 +4,4 @@ dictionary.json
 env
 __pycache__
 test.py
+.env
