@@ -75,7 +75,7 @@ def get_car_details(url):
     data['url'] = url.strip()
     r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, 'lxml')
-    data['title'] = soup.find('div', class_='adatlap-cim').text
+    data['title'] = soup.find('div', class_='adatlap-cim').text.strip()
 
     data_table = soup.find('table', class_='hirdetesadatok')
     cells = data_table.find_all('td')
@@ -123,7 +123,10 @@ def clean_key_value(key, value):
         extracted_value = value_match.group(1).strip()
         new_value = int(re.sub(r'\s|\xa0', '', extracted_value))
         unit = value_match.group(2)
-        new_key = '{} ({})'.format(new_key, unit)
+        if unit:
+            new_key = '{} ({})'.format(new_key, unit)
+    else:
+        new_value = new_value.replace('\xa0', ' ')
 
     return (new_key, new_value)
 
