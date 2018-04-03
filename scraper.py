@@ -20,7 +20,7 @@ MONGODB_URI = os.environ.get(
     'MONGODB_URI', "mongodb://127.0.0.1:27017/used_cars")
 db = MongoClient(MONGODB_URI).get_database()
 
-logging.basicConfig(level='DEBUG')
+logging.basicConfig(level='INFO')
 
 BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto/'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'}
@@ -43,18 +43,27 @@ def get_ad_links(brand, model):
         last_page_number = int(soup.find('li', class_='last').text)
 
         # Loop through results pages and get ad links
+        count = 0
         for page in range(1, last_page_number + 1):
             url = model_url + '/page{}'.format(page)
             ad_page = requests.get(url, headers=HEADERS)
-
             if ad_page.status_code == requests.codes['ok']:
                 soup = BeautifulSoup(ad_page.text, 'lxml')
                 result_items = soup.find_all('div', class_='talalati_lista_head')
                 for result_item in result_items:
                     link = result_item.find('a').get('href')
-                    q.enqueue(update_ad_data, link, brand, model)
+                    results = db['links'].update_one({'url': link},
+                                                     {'$setOnInsert': {'url': link,
+                                                                       'brand': brand,
+                                                                       'model': model
+                                                                      }
+                                                     },
+                                                     upsert=True)
+                    count += bool(results.upserted_id)
             else:
                 logging.error('Cannot get {}'.format(url))
+        logging.info('Saved {} links for {} {}'.format(count, brand, model))
+        return count
     else:
         logging.error('Cannot get {}'.format(url))
 
