@@ -9,22 +9,22 @@ from calendar import monthrange
 import re
 from pymongo import MongoClient
 import os
+import json
 
 MONGODB_URI = os.environ.get('MONGODB_URI')
-
 db = MongoClient(MONGODB_URI).get_database()
 
 logging.basicConfig(level='DEBUG')
 
 BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto/'
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'}
-MODELS = [
-    ('skoda', 'octavia'),
-    ('opel', 'astra'),
-    ('ford', 'focus'),
-    ('volvo', 's40'),
-    ('volvo', 'v40')
-]
+HEADERS = {'User-Agent': '''
+Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like 
+Gecko) Chrome/59.0.3071.115 Safari/537.36
+'''}
+
+with open('config.json', 'r') as conf_file:
+    config = json.load(conf_file)
+    MODELS = [(car['brand'], car['model']) for car in config['models']]
 
 
 def save_ad_links(brand, model):
@@ -108,7 +108,6 @@ def clean_key_value(key, value):
     Clean key-value pair
     '''
 
-    # Strip ":" from end of key
     new_key = key[:-1]
     new_value = value
 
@@ -127,6 +126,7 @@ def clean_key_value(key, value):
         new_value = int(re.sub(r'\s|\xa0', '', extracted_value))
         unit = value_match.group(2)
         if unit:
+            # Add unit to key
             new_key = '{} ({})'.format(new_key, unit)
     else:
         new_value = new_value.replace('\xa0', ' ')
@@ -134,34 +134,34 @@ def clean_key_value(key, value):
     return (new_key, new_value)
 
 
-def scrape_ads():
+def scrape_ad(url):
     '''
-    Loop through ad links and save data to MongoDB collection
+    Save data from url to cars collection, if not already saved
     '''
 
-    links = db['links'].find({'done': {'$exists': False}}, projection=['url'])
-    for link in links:
-        check = db['cars'].find_one({'url': link['url']})
-        if check is None:
-            logging.info('New link: {}'.format(link))
-            try:
-                details = get_car_details(link)
-                details['brand'] = brand
-                details['model'] = model
-                details['scraped'] = date.today()
-            except Exception as e:
-                logging.error(e)
-                logging.error(link)
-            else:
-                db['cars'].update_one({'url': link['url']},
-                                      {'$setOnInsert': details},
-                                      upsert=True)
-        db['links'].update_one({'url': link['url']}, {'$set': {'done': True}})
+    check = db['cars'].find_one({'url': url})
+    if check is None:
+        logging.info('New link: {}'.format(url))
+        try:
+            details = get_car_details(url)
+            details['brand'] = brand
+            details['model'] = model
+            details['scraped'] = date.today()
+        except Exception as e:
+            logging.error(e)
+            logging.error(url)
+        else:
+            db['cars'].update_one({'url': url},
+                                  {'$setOnInsert': details},
+                                  upsert=True)
 
 
 if __name__ == '__main__':
     for brand, model in MODELS:
         logging.info('Starting {} {}'.format(brand, model))
         save_ad_links(brand, model)
-
-    scrape_ads()
+    
+    links = db['links'].find({'done': {'$exists': False}}, projection=['url'])
+    for link in links:
+        scrape_ad(link['url'])
+        db['links'].update_one({'url': link['url']}, {'$set': {'done': True}})

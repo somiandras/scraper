@@ -1,0 +1,24 @@
+{
+    "models": [
+        {
+            "brand": "volkswagen",
+            "model": "golf"
+        },
+        {
+            "brand": "ford",
+            "model": "focus"
+        },
+        {
+            "brand": "skoda",
+            "model": "octavia"
+        },
+        {
+            "brand": "volvo",
+            "model": "v40"
+        },
+        {
+            "brand": "volvo",
+            "model": "s40"
+        }
+    ]
+}
