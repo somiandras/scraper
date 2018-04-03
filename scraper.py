@@ -40,7 +40,7 @@ def get_ad_links(brand, model):
     logging.debug('URL: {}, status: {}'.format(model_url, r.status_code))
     if r.status_code == requests.codes['ok']:
         soup = BeautifulSoup(r.text, 'lxml')
-        last_page_number = int(soup.find(title='Utolsó oldal').text)
+        last_page_number = int(soup.find('li', class_='last').text)
 
         # Loop through results pages and get ad links
         for page in range(1, last_page_number + 1):
