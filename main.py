@@ -1,6 +1,6 @@
 import json
 import logging
-from queue_worker import conn
+from worker import conn
 from rq import Queue
 from scraper import get_ad_links
 

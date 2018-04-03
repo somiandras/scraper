@@ -11,7 +11,7 @@ from pymongo import MongoClient
 import os
 import json
 import time
-from queue_worker import conn
+from worker import conn
 from rq import Queue
 
 q = Queue(connection=conn)
@@ -55,9 +55,7 @@ def get_ad_links(brand, model):
                 result_items = soup.find_all('div', class_='talalati_lista_head')
                 for result_item in result_items:
                     link = result_item.find('a').get('href')
-                    check = db['cars'].find_one({'url': link})
-                    if check is None:
-                        q.enqueue(update_ad_data, link, brand, model)
+                    q.enqueue(update_ad_data, link, brand, model)
             else:
                 logging.error('Cannot get {}'.format(url))
     else:
@@ -142,16 +140,17 @@ def update_ad_data(url, brand, model, is_retry=False):
     Save/check data at url and update cars collection:
 
     `url` (string): ad url to scrape  
+    `brand` (string): car brand of the link  
+    `model` (string): model of the brand on the link  
     `is_retry` (boolean): flag indicating second try for 5XX statuses
     '''
 
     logging.debug('Checking link: {}'.format(url))
     try:
-        details = get_car_details(url)
-        details['brand'] = brand
-        details['model'] = model
-        details['scraped'] = date.today()
-        details['status'] = 'active'
+        data = get_car_details(url)
+        data['brand'] = brand
+        data['model'] = model
+        data['scraped'] = date.today()
     except requests.exceptions.HTTPError as e:
         # HTTP statuses 4XX and 5XX
         if e.response.status_code < 500:
@@ -174,7 +173,19 @@ def update_ad_data(url, brand, model, is_retry=False):
         logging.error(e)
         logging.error(url)
     else:
-        # All is good, upsert data
+        # All is good, refresh data
         db['cars'].update_one({'url': url},
-                              {'$setOnInsert': details},
-                              upsert=True)
+                              {
+                                {'$setOnInsert': data},
+                                {'$set': {'status': 'active',
+                                          'last_updated': date.today()
+                                         }
+                                },
+                                {'$push': {
+                                    'updates': {
+                                        'price': data['details']['Vételár (Ft)'],
+                                        'date': date.today()
+                                    }
+                                }},
+                              }, upsert=True)
+        return True

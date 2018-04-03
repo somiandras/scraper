@@ -1,1 +1,1 @@
-worker: python queue_worker
+worker: python worker.py
