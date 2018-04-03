@@ -23,10 +23,7 @@ db = MongoClient(MONGODB_URI).get_database()
 logging.basicConfig(level='DEBUG')
 
 BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto/'
-HEADERS = {'User-Agent': '''
-Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like 
-Gecko) Chrome/59.0.3071.115 Safari/537.36
-'''}
+HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'}
 
 
 def get_ad_links(brand, model):
