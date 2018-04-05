@@ -12,6 +12,7 @@ class BasePage:
     Provide download method for handling webpages.
     '''
 
+    _html = None
     BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto/'
     HEADERS = {
         'User-Agent': ' '.join([
@@ -32,7 +33,7 @@ class BasePage:
         except requests.exceptions.HTTPError as e:
             logging.error(e)
         else:
-            self.html = r.text
+            self._html = r.text
         
         return self
 
@@ -41,6 +42,8 @@ class AdPage(BasePage):
     '''
     Class for interacting with a single car ad page.
     '''
+
+    _data = None
 
     def __init__(self, url, brand, model):
         self.url = url
@@ -53,10 +56,10 @@ class AdPage(BasePage):
         data['features'] = {}
         data['other'] = {}
         
-        if self.html is None:
-            raise Exception('No HTML to parse, call download() first')
+        if self._html is None:
+            self.download()
         
-        soup = BeautifulSoup(self.html, 'lxml')
+        soup = BeautifulSoup(self._html, 'lxml')
         data['title'] = soup.find('div', class_='adatlap-cim').text.strip()
 
         data_table = soup.find('table', class_='hirdetesadatok')
@@ -68,24 +71,25 @@ class AdPage(BasePage):
             new_key, new_value = self._clean_key_value(key, value)
             data['details'][new_key] = new_value
 
-        features = soup.find('div', class_='felszereltseg').find_all('li')
-
-        for feature in features:
-            data['features'][feature.text.strip()] = True
+        feature_set = soup.find('div', class_='felszereltseg')
+        if feature_set:
+            for feature in feature_set.find_all('li'):
+                data['features'][feature.text.strip()] = True
 
         description = soup.find(
             'div', class_='leiras').find('div').text.strip()
         data['description'] = description
 
         other_features = soup.find(
-            'div', class_='egyebinformacio').find_all('li')
+            'div', class_='egyebinformacio')
         
-        for feature in other_features:
-            data['other'][feature.text.strip()] = True
+        if other_features:                
+            for feature in other_features.find_all('li'):
+                data['other'][feature.text.strip()] = True
 
         data['brand'] = self.brand
         data['model'] = self.model
-        data['scraped'] = date.today()
+        data['scraped'] = date.today().isoformat()
 
         self._data = data
 
@@ -130,10 +134,10 @@ class AdPage(BasePage):
 
     def save(self, collection):
         db_filter = {'url': self.url}
-        status = {'status': 'active', 'last_updated': date.today()}
+        status = {'status': 'active', 'last_updated': date.today().isoformat()}
         update = {
             'price': self.data['details']['Vételár (Ft)'],
-            'date': date.today()
+            'date': date.today().isoformat()
         }
         collection.update_one(db_filter, 
                               {'$setOnInsert': self.data,
@@ -146,18 +150,20 @@ class ResultsPage(BasePage):
     Class for interacting a single search results page.
     '''
 
+    _links = None
+
     def __init__(self, url, brand, model):
         self.url = url
         self.brand = brand
         self.model = model
 
     def parse(self):
-        if self.html is None:
+        if self._html is None:
             self.download()
 
-        soup = BeautifulSoup(self.html, 'lxml')
+        soup = BeautifulSoup(self._html, 'lxml')
         result_items = soup.find_all('div', class_='cim-kontener')
-        self.links = [item.find('a').get('href') for item in result_items]
+        self._links = [item.find('a').get('href') for item in result_items]
         return self
 
     @property
@@ -167,10 +173,10 @@ class ResultsPage(BasePage):
         result page.
         '''
 
-        if self.links is None:
+        if self._links is None:
             self.parse()
 
-        for url in self.links:
+        for url in self._links:
             yield AdPage(url, self.brand, self.model)
 
     def save_all(self, collection):
@@ -187,15 +193,17 @@ class ModelSearch(BasePage):
     Search page for given brand and model.
     '''
 
+    _page_count_cached = None
+
     def __init__(self, brand, model):
         self.brand = brand
         self.model = model
 
     def parse(self):
-        if self.html is None:
+        if self._html is None:
             self.download()
         try:
-            soup = BeautifulSoup(self.html, 'lxml')
+            soup = BeautifulSoup(self._html, 'lxml')
             last_page = int(soup.find('li', class_='last').text)
         except AttributeError as e:
             logging.error('Last page link not found on results page')

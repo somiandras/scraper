@@ -25,4 +25,4 @@ if __name__ == '__main__':
     for brand, model in MODELS:
         search = ModelSearch(brand, model)
         for page in search.pages:
-            q.enqueue(page.save_all(db['cars']))
+            q.enqueue(page.save_all, db['cars'])
