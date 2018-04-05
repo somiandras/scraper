@@ -13,7 +13,7 @@ class BasePage:
     '''
 
     _html = None
-    BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto/'
+    BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto'
     HEADERS = {
         'User-Agent': ' '.join([
             'Mozilla/5.0',
