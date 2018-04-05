@@ -6,10 +6,12 @@ from bs4 import BeautifulSoup
 from datetime import date
 import re
 import logging
+from pymongo import MongoClient
+import os
 
 class BasePage:
     '''
-    Provide download method for handling webpages.
+    Provide download method and db connection for webpages.
     '''
 
     _html = None
@@ -23,8 +25,15 @@ class BasePage:
         ])
     }
 
-    def __init__(self, url):
+    def __init__(self, url, brand, model):
         self.url = url
+        self.brand = brand
+        self.model = model
+        self._db = MongoClient(self.MONGODB_URI).get_database()
+
+    @property
+    def MONGODB_URI(self):
+        return os.environ.get('MONGODB_URI', 'mongodb://127.0.0.1:27017/used_cars')
 
     def download(self):
         r = requests.get(self.url, headers=self.HEADERS)
@@ -46,10 +55,8 @@ class AdPage(BasePage):
     _data = None
 
     def __init__(self, url, brand, model):
-        self.url = url
-        self.brand = brand
-        self.model = model
-
+        super().__init__(url, brand, model)
+        
     def parse(self):
         data = {}
         data['details'] = {}
@@ -132,18 +139,18 @@ class AdPage(BasePage):
 
         return self._data
 
-    def save(self, collection):
+    def save(self):
         db_filter = {'url': self.url}
         status = {'status': 'active', 'last_updated': date.today().isoformat()}
         update = {
             'price': self.data['details']['Vételár (Ft)'],
             'date': date.today().isoformat()
         }
-        collection.update_one(db_filter, 
-                              {'$setOnInsert': self.data,
-                               '$set': status,
-                               '$push': {'updates': update}},
-                              upsert=True)
+        self._db['used_cars'].update_one(db_filter, 
+                                         {'$setOnInsert': self.data,
+                                          '$set': status,
+                                          '$push': {'updates': update}},
+                                         upsert=True)
 
 class ResultsPage(BasePage):
     '''
@@ -153,9 +160,7 @@ class ResultsPage(BasePage):
     _links = None
 
     def __init__(self, url, brand, model):
-        self.url = url
-        self.brand = brand
-        self.model = model
+        super().__init__(url, brand, model)
 
     def parse(self):
         if self._html is None:
@@ -185,7 +190,7 @@ class ResultsPage(BasePage):
         '''
 
         for ad in self.ads:
-            ad.save(collection)
+            ad.save()
 
 
 class ModelSearch(BasePage):
@@ -196,8 +201,8 @@ class ModelSearch(BasePage):
     _page_count_cached = None
 
     def __init__(self, brand, model):
-        self.brand = brand
-        self.model = model
+        super().__init__(None, brand, model)
+        self.url = '{0}/{1}/{2}'.format(self.BASE_URL, self.brand, self.model)
 
     def parse(self):
         if self._html is None:
@@ -213,14 +218,6 @@ class ModelSearch(BasePage):
             self._page_count_cached = last_page
 
         return self
-
-    @property
-    def url(self):
-        '''
-        Compile the complete search url for the given brand and model.
-        '''
-
-        return '{0}/{1}/{2}'.format(self.BASE_URL, self.brand, self.model)
 
     @property
     def page_count(self):
