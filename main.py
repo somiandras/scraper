@@ -12,10 +12,7 @@ db = MongoClient(MONGODB_URI).get_database()
 
 q = Queue(connection=conn)
 
-if os.environ.get('ENVIRONMENT') == 'production':
-    logging.basicConfig(level=logging.INFO)
-else:
-    logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 
 def save_ad_data(ad):
@@ -23,15 +20,14 @@ def save_ad_data(ad):
     db_filter = {'url': data['url']}
     status = {'status': 'active', 'last_updated': date.today().isoformat()}
     update = {
-        'price': data['details']['Vételár (Ft)'],
+        'price': data['details'].get('Vételár (Ft)', None),
         'date': date.today().isoformat()
     }
-    db['used_cars'].update_one(db_filter,
+    db['cars'].update_one(db_filter,
                                {'$setOnInsert': data,
                                 '$set': status,
                                 '$push': {'updates': update}},
                                upsert=True)
-
 
 if __name__ == '__main__':
     with open('config.json', 'r') as conf_file:
@@ -41,4 +37,5 @@ if __name__ == '__main__':
     for brand, model in MODELS:
         search = ModelSearch(brand, model)
         for page in search.pages:
-            map(q.enqueue, map(save_ad_data, page.ads))
+            for ad in page.ads:
+                save_ad_data(ad)

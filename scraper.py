@@ -76,9 +76,9 @@ class AdPage(BasePage):
             for feature in feature_set.find_all('li'):
                 data['features'][feature.text.strip()] = True
 
-        description = soup.find(
-            'div', class_='leiras').find('div').text.strip()
-        data['description'] = description
+        description = soup.find('div', class_='leiras')
+        if description:
+            data['description'] = description.text.strip()
 
         other_features = soup.find(
             'div', class_='egyebinformacio')
@@ -172,7 +172,7 @@ class ModelSearch(BasePage):
     Search page for given brand and model.
     '''
 
-    _page_count_cached = None
+    _page_count = None
 
     def __init__(self, brand, model):
         super().__init__(None, brand, model)
@@ -181,15 +181,18 @@ class ModelSearch(BasePage):
     def parse(self):
         if self._html is None:
             self.download()
+
         try:
             soup = BeautifulSoup(self._html, 'lxml')
             last_page = int(soup.find('li', class_='last').text)
         except AttributeError as e:
-            logging.error('Last page link not found on results page')
-            logging.error(self.url)
             logging.error(e)
+            logging.error(self.url)
+        except TypeError as e:
+            logging.error(e)
+            logging.error('self._html: {}'.format(self._html))
         else:
-            self._page_count_cached = last_page
+            self._page_count = last_page
 
         return self
 
@@ -200,10 +203,10 @@ class ModelSearch(BasePage):
         number of pages.
         '''
 
-        if self._page_count_cached is None:
+        if self._page_count is None:
             self.parse()
 
-        return self._page_count_cached
+        return self._page_count
 
     @property
     def pages(self):
