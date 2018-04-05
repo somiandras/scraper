@@ -3,86 +3,60 @@
 
 import requests
 from bs4 import BeautifulSoup
-import logging
 from datetime import date
-from calendar import monthrange
 import re
-from pymongo import MongoClient
-import os
-import json
-import time
-from worker import conn
-from rq import Queue
+import logging
 
-q = Queue(connection=conn)
-
-MONGODB_URI = os.environ.get(
-    'MONGODB_URI', "mongodb://127.0.0.1:27017/used_cars")
-db = MongoClient(MONGODB_URI).get_database()
-
-logging.basicConfig(level='INFO')
-
-BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto/'
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'}
-
-
-def get_ad_links(brand, model):
+class BasePage:
     '''
-    Download initial page of results list, extract the number of result pages,
-    loop through them and get all the individual ad links.
+    Provide download method for handling webpages.
     '''
 
-    logging.info('Get ad links for {} {}'.format(brand, model))
-
-    # Initial page to get page numbers
-    model_url = '{0}/{1}/{2}'.format(BASE_URL, brand, model)
-    r = requests.get(model_url, headers=HEADERS)
-    logging.debug('URL: {}, status: {}'.format(model_url, r.status_code))
-    if r.status_code == requests.codes['ok']:
-        soup = BeautifulSoup(r.text, 'lxml')
-        last_page_number = int(soup.find('li', class_='last').text)
-
-        # Loop through results pages and get ad links
-        count = 0
-        for page in range(1, last_page_number + 1):
-            url = model_url + '/page{}'.format(page)
-            ad_page = requests.get(url, headers=HEADERS)
-            if ad_page.status_code == requests.codes['ok']:
-                soup = BeautifulSoup(ad_page.text, 'lxml')
-                result_items = soup.find_all('div', class_='talalati_lista_head')
-                for result_item in result_items:
-                    link = result_item.find('a').get('href')
-                    results = db['links'].update_one({'url': link},
-                                                     {'$setOnInsert': {'url': link,
-                                                                       'brand': brand,
-                                                                       'model': model
-                                                                      }
-                                                     },
-                                                     upsert=True)
-                    count += bool(results.upserted_id)
-            else:
-                logging.error('Cannot get {}'.format(url))
-        logging.info('Saved {} links for {} {}'.format(count, brand, model))
-        return count
-    else:
-        logging.error('Cannot get {}'.format(url))
-
-
-def get_car_details(url):
-    '''
-    Extract car details from HTML and return data in dict
-    '''
-
-    data = {
-        'details': {},
-        'features': {},
-        'other': {}
+    BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto/'
+    HEADERS = {
+        'User-Agent': ' '.join([
+            'Mozilla/5.0',
+            '(Macintosh; Intel Mac OS X 10_12_5)',
+            'AppleWebKit/537.36 (KHTML, like Gecko)',
+            'Chrome/59.0.3071.115 Safari/537.36'
+        ])
     }
-    data['id'] = url.strip()[-8:]
-    data['url'] = url.strip()
-    r = requests.get(url, headers=HEADERS)
-    if r.status_code == requests.codes['ok']:
-        soup = BeautifulSoup(r.text, 'lxml')
+
+    def __init__(self, url):
+        self.url = url
+
+    def download(self):
+        r = requests.get(self.url, headers=self.HEADERS)
+        try:
+            r.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            logging.error(e)
+        else:
+            self.html = r.text
+        
+        return self
+
+
+class AdPage(BasePage):
+    '''
+    Class for interacting with a single car ad page.
+    '''
+
+    def __init__(self, url, brand, model):
+        self.url = url
+        self.brand = brand
+        self.model = model
+
+    def parse(self):
+        data = {}
+        data['details'] = {}
+        data['features'] = {}
+        data['other'] = {}
+        
+        if self.html is None:
+            raise Exception('No HTML to parse, call download() first')
+        
+        soup = BeautifulSoup(self.html, 'lxml')
         data['title'] = soup.find('div', class_='adatlap-cim').text.strip()
 
         data_table = soup.find('table', class_='hirdetesadatok')
@@ -91,107 +65,174 @@ def get_car_details(url):
         for cell_index in range(0, len(cells), 2):
             key = cells[cell_index].text.strip()
             value = cells[cell_index + 1].text.strip()
-            new_key, new_value = clean_key_value(key, value)
+            new_key, new_value = self._clean_key_value(key, value)
             data['details'][new_key] = new_value
 
         features = soup.find('div', class_='felszereltseg').find_all('li')
+
         for feature in features:
             data['features'][feature.text.strip()] = True
 
-        description = soup.find('div', class_='leiras').find('div').text.strip()
+        description = soup.find(
+            'div', class_='leiras').find('div').text.strip()
         data['description'] = description
 
-        other_features = soup.find('div', class_='egyebinformacio').find_all('li')
+        other_features = soup.find(
+            'div', class_='egyebinformacio').find_all('li')
+        
         for feature in other_features:
             data['other'][feature.text.strip()] = True
 
-        return data
-    else:
-        r.raise_for_status()
-
-
-def clean_key_value(key, value):
-    '''
-    Clean key-value pair
-    '''
-
-    new_key = key[:-1]
-    new_value = value
-
-    # Try to extract numerical values
-    value_match = re.match(r'''
-        ^[^/]*?
-        [\s\xa0]?
-        ((?:[\s\xa0]?[0-9]{1,3})+)
-        [\s\xa0]?
-        ([^0-9\s\xa0]*)$
-    ''', value, re.VERBOSE)
-
-    if value_match:
-        # Numerical value found, update key and value
-        extracted_value = value_match.group(1).strip()
-        new_value = int(re.sub(r'\s|\xa0', '', extracted_value))
-        unit = value_match.group(2)
-        if unit:
-            # Add unit to key
-            new_key = '{} ({})'.format(new_key, unit)
-    else:
-        new_value = new_value.replace('\xa0', ' ')
-
-    return (new_key, new_value)
-
-
-def update_ad_data(url, brand, model, is_retry=False):
-    '''
-    Save/check data at url and update cars collection:
-
-    `url` (string): ad url to scrape  
-    `brand` (string): car brand of the link  
-    `model` (string): model of the brand on the link  
-    `is_retry` (boolean): flag indicating second try for 5XX statuses
-    '''
-
-    logging.debug('Checking link: {}'.format(url))
-    try:
-        data = get_car_details(url)
-        data['brand'] = brand
-        data['model'] = model
+        data['brand'] = self.brand
+        data['model'] = self.model
         data['scraped'] = date.today()
-    except requests.exceptions.HTTPError as e:
-        # HTTP statuses 4XX and 5XX
-        if e.response.status_code < 500:
-            # Not found or similar, update the corresponding document if 
-            # it's an existing entry
-            db['cars'].update_one({'url': url}, 
-                                  {'$set': {'status': 'inactive',
-                                            'removed': date.today()
-                                           }
-                                  })
+
+        self._data = data
+
+        return self
+
+    def _clean_key_value(self, key, value):
+        '''
+        Clean key-value pair
+        '''
+
+        new_key = key[:-1]
+        new_value = value
+
+        # Try to extract numerical values
+        value_match = re.match(r'''
+            ^[^/]*?
+            [\s\xa0]?
+            ((?:[\s\xa0]?[0-9]{1,3})+)
+            [\s\xa0]?
+            ([^0-9\s\xa0]*)$
+        ''', value, re.VERBOSE)
+
+        if value_match:
+            # Numerical value found, update key and value
+            extracted_value = value_match.group(1).strip()
+            new_value = int(re.sub(r'\s|\xa0', '', extracted_value))
+            unit = value_match.group(2)
+            if unit:
+                # Add unit to key
+                new_key = '{} ({})'.format(new_key, unit)
         else:
-            # Possibly server error, retry once
-            time.sleep(10)
-            if not is_retry:
-                update_ad_data(url, brand, model, is_retry=True)
-            else:
-                logging.error(e)
-                logging.error(url)
-    except Exception as e:
-        logging.error(e)
-        logging.error(url)
-    else:
-        # All is good, refresh data
-        db['cars'].update_one({'url': url},
-                              {
-                                {'$setOnInsert': data},
-                                {'$set': {'status': 'active',
-                                          'last_updated': date.today()
-                                         }
-                                },
-                                {'$push': {
-                                    'updates': {
-                                        'price': data['details']['Vételár (Ft)'],
-                                        'date': date.today()
-                                    }
-                                }},
-                              }, upsert=True)
-        return True
+            new_value = new_value.replace('\xa0', ' ')
+
+        return (new_key, new_value)
+
+    @property
+    def data(self):
+        if self._data is None:
+            self.parse()
+
+        return self._data
+
+    def save(self, collection):
+        db_filter = {'url': self.url}
+        status = {'status': 'active', 'last_updated': date.today()}
+        update = {
+            'price': self.data['details']['Vételár (Ft)'],
+            'date': date.today()
+        }
+        collection.update_one(db_filter, 
+                              {'$setOnInsert': self.data,
+                               '$set': status,
+                               '$push': {'updates': update}},
+                              upsert=True)
+
+class ResultsPage(BasePage):
+    '''
+    Class for interacting a single search results page.
+    '''
+
+    def __init__(self, url, brand, model):
+        self.url = url
+        self.brand = brand
+        self.model = model
+
+    def parse(self):
+        if self.html is None:
+            self.download()
+
+        soup = BeautifulSoup(self.html, 'lxml')
+        result_items = soup.find_all('div', class_='cim-kontener')
+        self.links = [item.find('a').get('href') for item in result_items]
+        return self
+
+    @property
+    def ads(self):
+        '''
+        Generator yielding AdPage instances for each ad link on the
+        result page.
+        '''
+
+        if self.links is None:
+            self.parse()
+
+        for url in self.links:
+            yield AdPage(url, self.brand, self.model)
+
+    def save_all(self, collection):
+        '''
+        Save all ad pages on the given results list.
+        '''
+
+        for ad in self.ads:
+            ad.save(collection)
+
+
+class ModelSearch(BasePage):
+    '''
+    Search page for given brand and model.
+    '''
+
+    def __init__(self, brand, model):
+        self.brand = brand
+        self.model = model
+
+    def parse(self):
+        if self.html is None:
+            self.download()
+        try:
+            soup = BeautifulSoup(self.html, 'lxml')
+            last_page = int(soup.find('li', class_='last').text)
+        except AttributeError as e:
+            logging.error('Last page link not found on results page')
+            logging.error(self.url)
+            logging.error(e)
+        else:
+            self._page_count_cached = last_page
+
+        return self
+
+    @property
+    def url(self):
+        '''
+        Compile the complete search url for the given brand and model.
+        '''
+
+        return '{0}/{1}/{2}'.format(self.BASE_URL, self.brand, self.model)
+
+    @property
+    def page_count(self):
+        '''
+        Download initial page of results list and parse the
+        number of pages.
+        '''
+
+        if self._page_count_cached is None:
+            self.parse()
+
+        return self._page_count_cached
+
+    @property
+    def pages(self):
+        '''
+        Generator yielding result pages of the search for the given
+        brand and model.
+        '''
+
+        for page in range(1, self.page_count + 1):
+            url = '{}/page{}'.format(self.url, page)
+            yield ResultsPage(url, self.brand, self.model)

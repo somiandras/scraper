@@ -6,7 +6,9 @@
         },
         {
             "brand": "ford",
-            "model": "focus"
+            "model": "focus",
+            "brand_id": "51",
+            "model_id": "541"
         },
         {
             "brand": "skoda",
