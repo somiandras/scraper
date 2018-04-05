@@ -6,8 +6,6 @@ from bs4 import BeautifulSoup
 from datetime import date
 import re
 import logging
-from pymongo import MongoClient
-import os
 
 class BasePage:
     '''
@@ -29,11 +27,6 @@ class BasePage:
         self.url = url
         self.brand = brand
         self.model = model
-        self._db = MongoClient(self.MONGODB_URI).get_database()
-
-    @property
-    def MONGODB_URI(self):
-        return os.environ.get('MONGODB_URI', 'mongodb://127.0.0.1:27017/used_cars')
 
     def download(self):
         r = requests.get(self.url, headers=self.HEADERS)
@@ -94,6 +87,7 @@ class AdPage(BasePage):
             for feature in other_features.find_all('li'):
                 data['other'][feature.text.strip()] = True
 
+        data['url'] = self.url
         data['brand'] = self.brand
         data['model'] = self.model
         data['scraped'] = date.today().isoformat()
@@ -139,18 +133,6 @@ class AdPage(BasePage):
 
         return self._data
 
-    def save(self):
-        db_filter = {'url': self.url}
-        status = {'status': 'active', 'last_updated': date.today().isoformat()}
-        update = {
-            'price': self.data['details']['Vételár (Ft)'],
-            'date': date.today().isoformat()
-        }
-        self._db['used_cars'].update_one(db_filter, 
-                                         {'$setOnInsert': self.data,
-                                          '$set': status,
-                                          '$push': {'updates': update}},
-                                         upsert=True)
 
 class ResultsPage(BasePage):
     '''
@@ -183,14 +165,6 @@ class ResultsPage(BasePage):
 
         for url in self._links:
             yield AdPage(url, self.brand, self.model)
-
-    def save_all(self, collection):
-        '''
-        Save all ad pages on the given results list.
-        '''
-
-        for ad in self.ads:
-            ad.save()
 
 
 class ModelSearch(BasePage):

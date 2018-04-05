@@ -1,16 +1,37 @@
 import json
 import logging
+from datetime import date
 from worker import conn
 from rq import Queue
 from scraper import ModelSearch
 import os
+from pymongo import MongoClient
+
+MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://127.0.0.1:27017/used_cars')
+db = MongoClient(MONGODB_URI).get_database()
+
+q = Queue(connection=conn)
 
 if os.environ.get('ENVIRONMENT') == 'production':
     logging.basicConfig(level=logging.INFO)
 else:
     logging.basicConfig(level=logging.DEBUG)
 
-q = Queue(connection=conn)
+
+def save_ad_data(ad):
+    data = ad.data
+    db_filter = {'url': data['url']}
+    status = {'status': 'active', 'last_updated': date.today().isoformat()}
+    update = {
+        'price': data['details']['Vételár (Ft)'],
+        'date': date.today().isoformat()
+    }
+    db['used_cars'].update_one(db_filter,
+                               {'$setOnInsert': data,
+                                '$set': status,
+                                '$push': {'updates': update}},
+                               upsert=True)
+
 
 if __name__ == '__main__':
     with open('config.json', 'r') as conf_file:
@@ -20,4 +41,4 @@ if __name__ == '__main__':
     for brand, model in MODELS:
         search = ModelSearch(brand, model)
         for page in search.pages:
-            q.enqueue(page.save_all)
+            map(q.enqueue, map(save_ad_data, page.ads))
