@@ -74,7 +74,7 @@ class AdPage(BasePage):
         feature_set = soup.find('div', class_='felszereltseg')
         if feature_set:
             for feature in feature_set.find_all('li'):
-                data['features'][feature.text.strip()] = True
+                data['features'][feature.text.strip().replace('.', '')] = True
 
         description = soup.find('div', class_='leiras')
         if description:
@@ -85,7 +85,7 @@ class AdPage(BasePage):
         
         if other_features:                
             for feature in other_features.find_all('li'):
-                data['other'][feature.text.strip()] = True
+                data['other'][feature.text.strip().replace('.', '')] = True
 
         data['url'] = self.url
         data['brand'] = self.brand
@@ -122,7 +122,7 @@ class AdPage(BasePage):
                 # Add unit to key
                 new_key = '{} ({})'.format(new_key, unit)
         else:
-            new_value = new_value.replace('\xa0', ' ')
+            new_value = new_value.replace('\xa0', ' ').replace('.', '')
 
         return (new_key, new_value)
 
