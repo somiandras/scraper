@@ -1,16 +1,15 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+
+import os
 import json
 import logging
 from datetime import date
-from worker import conn
-from rq import Queue
 from scraper import ModelSearch
-import os
 from pymongo import MongoClient
 
 MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://127.0.0.1:27017/used_cars')
 db = MongoClient(MONGODB_URI).get_database()
-
-q = Queue(connection=conn)
 
 logging.basicConfig(level=logging.DEBUG)
 
