@@ -5,5 +5,3 @@ env
 __pycache__
 .env
 *.rdb
-cleaner.py
-test.py
