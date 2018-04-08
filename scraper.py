@@ -122,8 +122,9 @@ class AdPage(BasePage):
                 # Add unit to key
                 new_key = '{} ({})'.format(new_key, unit)
         else:
-            new_value = new_value.replace('\xa0', ' ').replace('.', '')
-
+            new_value = new_value.replace('\xa0', ' ')
+        
+        new_key.replace('.', '')
         return (new_key, new_value)
 
     @property
