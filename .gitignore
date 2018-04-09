@@ -6,3 +6,4 @@ __pycache__
 .env
 *.rdb
 .vscode
+.DS_Store

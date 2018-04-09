@@ -58,41 +58,42 @@ class AdPage(BasePage):
         
         if self._html is None:
             self.download()
-        
-        soup = BeautifulSoup(self._html, 'lxml')
-        data['title'] = soup.find('div', class_='adatlap-cim').text.strip()
 
-        data_table = soup.find('table', class_='hirdetesadatok')
-        cells = data_table.find_all('td')
+        if self._html is not None:
+            soup = BeautifulSoup(self._html, 'lxml')
+            data['title'] = soup.find('div', class_='adatlap-cim').text.strip()
 
-        for cell_index in range(0, len(cells), 2):
-            key = cells[cell_index].text.strip()
-            value = cells[cell_index + 1].text.strip()
-            new_key, new_value = self._clean_key_value(key, value)
-            data['details'][new_key] = new_value
+            data_table = soup.find('table', class_='hirdetesadatok')
+            cells = data_table.find_all('td')
 
-        feature_set = soup.find('div', class_='felszereltseg')
-        if feature_set:
-            for feature in feature_set.find_all('li'):
-                data['features'][feature.text.strip().replace('.', '')] = True
+            for cell_index in range(0, len(cells), 2):
+                key = cells[cell_index].text.strip()
+                value = cells[cell_index + 1].text.strip()
+                new_key, new_value = self._clean_key_value(key, value)
+                data['details'][new_key] = new_value
 
-        description = soup.find('div', class_='leiras')
-        if description:
-            data['description'] = description.text.strip()
+            feature_set = soup.find('div', class_='felszereltseg')
+            if feature_set:
+                for feature in feature_set.find_all('li'):
+                    data['features'][feature.text.strip().replace('.', '')] = True
 
-        other_features = soup.find(
-            'div', class_='egyebinformacio')
-        
-        if other_features:                
-            for feature in other_features.find_all('li'):
-                data['other'][feature.text.strip().replace('.', '')] = True
+            description = soup.find('div', class_='leiras')
+            if description:
+                data['description'] = description.text.strip()
 
-        data['url'] = self.url
-        data['brand'] = self.brand
-        data['model'] = self.model
-        data['scraped'] = date.today().isoformat()
+            other_features = soup.find(
+                'div', class_='egyebinformacio')
+            
+            if other_features:                
+                for feature in other_features.find_all('li'):
+                    data['other'][feature.text.strip().replace('.', '')] = True
 
-        self._data = data
+            data['url'] = self.url
+            data['brand'] = self.brand
+            data['model'] = self.model
+            data['scraped'] = date.today().isoformat()
+
+            self._data = data
 
         return self
 
@@ -149,9 +150,10 @@ class ResultsPage(BasePage):
         if self._html is None:
             self.download()
 
-        soup = BeautifulSoup(self._html, 'lxml')
-        result_items = soup.find_all('div', class_='cim-kontener')
-        self._links = [item.find('a').get('href') for item in result_items]
+        if self._html is not None:
+            soup = BeautifulSoup(self._html, 'lxml')
+            result_items = soup.find_all('div', class_='cim-kontener')
+            self._links = [item.find('a').get('href') for item in result_items]
         return self
 
     @property
@@ -164,8 +166,9 @@ class ResultsPage(BasePage):
         if self._links is None:
             self.parse()
 
-        for url in self._links:
-            yield AdPage(url, self.brand, self.model)
+        if self._links is not None:
+            for url in self._links:
+                yield AdPage(url, self.brand, self.model)
 
 
 class ModelSearch(BasePage):
@@ -183,17 +186,18 @@ class ModelSearch(BasePage):
         if self._html is None:
             self.download()
 
-        try:
-            soup = BeautifulSoup(self._html, 'lxml')
-            last_page = int(soup.find('li', class_='last').text)
-        except AttributeError as e:
-            logging.error(e)
-            logging.error(self.url)
-        except TypeError as e:
-            logging.error(e)
-            logging.error('self._html: {}'.format(self._html))
-        else:
-            self._page_count = last_page
+        if self._html is not None:
+            try:
+                soup = BeautifulSoup(self._html, 'lxml')
+                last_page = int(soup.find('li', class_='last').text)
+            except AttributeError as e:
+                logging.error(e)
+                logging.error(self.url)
+            except TypeError as e:
+                logging.error(e)
+                logging.error('self._html: {}'.format(self._html))
+            else:
+                self._page_count = last_page
 
         return self
 
@@ -215,7 +219,9 @@ class ModelSearch(BasePage):
         Generator yielding result pages of the search for the given
         brand and model.
         '''
-
-        for page in range(1, self.page_count + 1):
-            url = '{}/page{}'.format(self.url, page)
-            yield ResultsPage(url, self.brand, self.model)
+        if self._page_count is not None:
+            for page in range(1, self.page_count + 1):
+                url = '{}/page{}'.format(self.url, page)
+                yield ResultsPage(url, self.brand, self.model)
+        else:
+            yield None
