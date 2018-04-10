@@ -92,9 +92,12 @@ class AdPage(BasePage):
                                              'value': True,
                                              'type': 'other'})
 
+            data['features'].append(
+                {'key': 'brand', 'value': self.brand, 'type': 'basic'})
+            data['features'].append(
+                {'key': 'model', 'value': self.model, 'type': 'basic'})
+            
             data['url'] = self.url
-            data['brand'] = self.brand
-            data['model'] = self.model
             data['scraped'] = datetime.today().isoformat()
 
             self._data = data

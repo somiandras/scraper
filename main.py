@@ -15,21 +15,22 @@ db = MongoClient(MONGODB_URI).get_database()
 
 def save_ad_data(ad):
     data = ad.data
-    db_filter = {'url': data['url']}
-    status = {'status': 'active', 'last_updated': datetime.today().isoformat()}
-    current_price = [f['value'] for f in data['features'] if f['key'] == 'Vételár (Ft)']
-    if len(current_price) > 0:
-        update = {
-            'price': current_price[0],
-            'date': datetime.today().isoformat()
-        }
-    else:
-        update = None
-    db['cars'].update_one(db_filter,
-                               {'$setOnInsert': data,
-                                '$set': status,
-                                '$push': {'updates': update}},
-                               upsert=True)
+    if data is not None:
+        db_filter = {'url': data['url']}
+        status = {'status': 'active', 'last_updated': datetime.today().isoformat()}
+        current_price = [f['value'] for f in data['features'] if f['key'] == 'Vételár (Ft)']
+        if len(current_price) > 0:
+            update = {
+                'price': current_price[0],
+                'date': datetime.today().isoformat()
+            }
+        else:
+            update = None
+        db['cars'].update_one(db_filter,
+                                {'$setOnInsert': data,
+                                    '$set': status,
+                                    '$push': {'updates': update}},
+                                upsert=True)
 
 if __name__ == '__main__':
     if '--debug' in sys.argv:
