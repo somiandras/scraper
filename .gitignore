@@ -7,3 +7,4 @@ __pycache__
 *.rdb
 .vscode
 .DS_Store
+*.sh
