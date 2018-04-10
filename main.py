@@ -5,7 +5,7 @@ import os
 import sys
 import json
 import logging
-from datetime import date
+from datetime import datetime
 from scraper import ModelSearch
 from pymongo import MongoClient
 
@@ -16,11 +16,15 @@ db = MongoClient(MONGODB_URI).get_database()
 def save_ad_data(ad):
     data = ad.data
     db_filter = {'url': data['url']}
-    status = {'status': 'active', 'last_updated': date.today().isoformat()}
-    update = {
-        'price': data['details'].get('Vételár (Ft)', None),
-        'date': date.today().isoformat()
-    }
+    status = {'status': 'active', 'last_updated': datetime.today().isoformat()}
+    current_price = [f['value'] for f in data['features'] if f['key'] == 'Vételár (Ft)']
+    if len(current_price) > 0:
+        update = {
+            'price': current_price[0],
+            'date': datetime.today().isoformat()
+        }
+    else:
+        update = None
     db['cars'].update_one(db_filter,
                                {'$setOnInsert': data,
                                 '$set': status,

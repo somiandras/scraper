@@ -3,7 +3,7 @@
 
 import requests
 from bs4 import BeautifulSoup
-from datetime import date
+from datetime import datetime
 import re
 import logging
 
@@ -52,9 +52,7 @@ class AdPage(BasePage):
         
     def parse(self):
         data = {}
-        data['details'] = {}
-        data['features'] = {}
-        data['other'] = {}
+        data['features'] = []
         
         if self._html is None:
             self.download()
@@ -70,28 +68,29 @@ class AdPage(BasePage):
                 key = cells[cell_index].text.strip()
                 value = cells[cell_index + 1].text.strip()
                 new_key, new_value = self._clean_key_value(key, value)
-                data['details'][new_key] = new_value
+                data['features'].append({'key': new_key, 'value': new_value})
 
             feature_set = soup.find('div', class_='felszereltseg')
             if feature_set:
                 for feature in feature_set.find_all('li'):
-                    data['features'][feature.text.strip().replace('.', '')] = True
+                    key = feature.text.strip()
+                    data['features'].append({'key': key, 'value': True})
 
             description = soup.find('div', class_='leiras')
             if description:
-                data['description'] = description.text.strip()
+                data['description'] = description.find('div').text.strip()
 
-            other_features = soup.find(
-                'div', class_='egyebinformacio')
+            other_features = soup.find('div', class_='egyebinformacio')
             
             if other_features:                
                 for feature in other_features.find_all('li'):
-                    data['other'][feature.text.strip().replace('.', '')] = True
+                    key = feature.text.strip()
+                    data['features'].append({'key': key, 'value': True})
 
             data['url'] = self.url
             data['brand'] = self.brand
             data['model'] = self.model
-            data['scraped'] = date.today().isoformat()
+            data['scraped'] = datetime.today().isoformat()
 
             self._data = data
 
@@ -125,7 +124,6 @@ class AdPage(BasePage):
         else:
             new_value = new_value.replace('\xa0', ' ')
         
-        new_key.replace('.', '')
         return (new_key, new_value)
 
     @property
@@ -134,7 +132,6 @@ class AdPage(BasePage):
             self.parse()
 
         return self._data
-
 
 class ResultsPage(BasePage):
     '''
