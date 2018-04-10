@@ -52,7 +52,9 @@ class AdPage(BasePage):
         
     def parse(self):
         data = {}
-        data['features'] = []
+        data['details'] = {}
+        data['features'] = {}
+        data['other'] = {}
         
         if self._html is None:
             self.download()
@@ -68,17 +70,13 @@ class AdPage(BasePage):
                 key = cells[cell_index].text.strip()
                 value = cells[cell_index + 1].text.strip()
                 new_key, new_value = self._clean_key_value(key, value)
-                data['features'].append({'key': new_key,
-                                         'value': new_value,
-                                         'type': 'basic'})
+                data['details'][new_key] = new_value
 
             feature_set = soup.find('div', class_='felszereltseg')
             if feature_set:
                 for feature in feature_set.find_all('li'):
                     key = feature.text.strip()
-                    data['features'].append({'key': key,
-                                             'value': True,
-                                             'type': 'feature'})
+                    data['features'][key] = True
 
             description = soup.find('div', class_='leiras')
             if description:
@@ -88,19 +86,14 @@ class AdPage(BasePage):
             if other_features:                
                 for feature in other_features.find_all('li'):
                     key = feature.text.strip()
-                    data['features'].append({'key': key,
-                                             'value': True,
-                                             'type': 'other'})
+                    data['other'][key] = True
 
-            data['features'].append(
-                {'key': 'brand', 'value': self.brand, 'type': 'basic'})
-            data['features'].append(
-                {'key': 'model', 'value': self.model, 'type': 'basic'})
-            
+            data['brand'] = self.brand
+            data['model'] = self.model            
             data['url'] = self.url
             data['scraped'] = datetime.today().isoformat()
 
-            self._data = data
+        self._data = data
 
         return self
 
