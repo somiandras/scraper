@@ -169,6 +169,8 @@ class ResultsPage(BasePage):
         if self._links is not None:
             for url in self._links:
                 yield AdPage(url, self.brand, self.model)
+        else:
+            return list()
 
 
 class ModelSearch(BasePage):
@@ -219,9 +221,9 @@ class ModelSearch(BasePage):
         Generator yielding result pages of the search for the given
         brand and model.
         '''
-        if self._page_count is not None:
+        if self.page_count is not None:
             for page in range(1, self.page_count + 1):
                 url = '{}/page{}'.format(self.url, page)
                 yield ResultsPage(url, self.brand, self.model)
         else:
-            yield None
+            return list()
