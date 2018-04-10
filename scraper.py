@@ -68,24 +68,29 @@ class AdPage(BasePage):
                 key = cells[cell_index].text.strip()
                 value = cells[cell_index + 1].text.strip()
                 new_key, new_value = self._clean_key_value(key, value)
-                data['features'].append({'key': new_key, 'value': new_value})
+                data['features'].append({'key': new_key,
+                                         'value': new_value,
+                                         'type': 'basic'})
 
             feature_set = soup.find('div', class_='felszereltseg')
             if feature_set:
                 for feature in feature_set.find_all('li'):
                     key = feature.text.strip()
-                    data['features'].append({'key': key, 'value': True})
+                    data['features'].append({'key': key,
+                                             'value': True,
+                                             'type': 'feature'})
 
             description = soup.find('div', class_='leiras')
             if description:
                 data['description'] = description.find('div').text.strip()
 
             other_features = soup.find('div', class_='egyebinformacio')
-            
             if other_features:                
                 for feature in other_features.find_all('li'):
                     key = feature.text.strip()
-                    data['features'].append({'key': key, 'value': True})
+                    data['features'].append({'key': key,
+                                             'value': True,
+                                             'type': 'other'})
 
             data['url'] = self.url
             data['brand'] = self.brand
