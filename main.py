@@ -13,23 +13,45 @@ MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://127.0.0.1:27017/used_cars
 db = MongoClient(MONGODB_URI).get_database()
 
 
+def encode_keys(data):
+    keys = db['keys']
+    for top_key in ['details', 'features', 'other']:
+        old_keys = list(data[top_key].keys())
+        for old_key in old_keys:
+            saved_key = keys.find_one({'description': old_key})
+            if saved_key is None:
+                logging.debug('{} is not in keys collection'.format(old_key))
+                count = keys.find({'type': top_key}).count()
+                new_key = '{}{:0>3}'.format(top_key[:2].upper(), count + 1)
+                logging.debug('Adding {} for {}'.format(new_key, old_key))
+                keys.insert_one(
+                    {'key': new_key, 'description': old_key, 'type': top_key})
+            else:
+                logging.debug('{} found in keys collection as {}'.format(
+                    old_key, saved_key.get('key')))
+                new_key = saved_key.get('key')
+            value = data[top_key].pop(old_key)
+            data[top_key][new_key] = value
+
+    return data
+
+
 def save_ad_data(ad):
     data = ad.data
     if data is not None:
         db_filter = {'url': data['url']}
-        status = {'status': 'active', 'last_updated': datetime.today().isoformat()}
-        current_price = [f['value'] for f in data['features'] if f['key'] == 'Vételár (Ft)']
-        if len(current_price) > 0:
+        current_price = data['details'].get('Vételár (Ft)', None)
+        if current_price is not None:
             update = {
-                'price': current_price[0],
+                'price': current_price,
                 'date': datetime.today().isoformat()
             }
         else:
             update = None
         db['cars'].update_one(db_filter,
-                                {'$setOnInsert': data,
-                                    '$set': status,
-                                    '$push': {'updates': update}},
+                                {'$setOnInsert': encode_keys(data),
+                                 '$set': {'last_updated': datetime.today().isoformat()},
+                                 '$push': {'updates': update}},
                                 upsert=True)
 
 if __name__ == '__main__':
