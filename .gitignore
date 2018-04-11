@@ -1,10 +1,7 @@
-scrape.log
-dictionary.json
-*.*workspace
-env
-__pycache__
-.env
-*.rdb
-.vscode
 .DS_Store
+__pycache__
+env
+.vscode
 *.sh
+*.log
+*.*workspace
