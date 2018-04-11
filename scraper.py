@@ -13,6 +13,7 @@ class BasePage:
     '''
 
     _html = None
+    status = None
     BASE_URL = 'https://www.hasznaltauto.hu/szemelyauto'
     HEADERS = {
         'User-Agent': ' '.join([
@@ -30,6 +31,7 @@ class BasePage:
 
     def download(self):
         r = requests.get(self.url, headers=self.HEADERS)
+        self.status = r.status_code
         try:
             r.raise_for_status()
         except requests.exceptions.HTTPError as e:
@@ -178,9 +180,10 @@ class ModelSearch(BasePage):
 
     _page_count = None
 
-    def __init__(self, brand, model):
-        super().__init__(None, brand, model)
-        self.url = '{0}/{1}/{2}'.format(self.BASE_URL, self.brand, self.model)
+    def __init__(self, url, brand, model):
+        super().__init__(url, brand, model)
+        if url is None:
+            url = '{0}/{1}/{2}'.format(self.BASE_URL, self.brand, self.model)
 
     def parse(self):
         if self._html is None:
