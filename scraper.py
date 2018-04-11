@@ -93,7 +93,7 @@ class AdPage(BasePage):
             data['url'] = self.url
             data['scraped'] = datetime.today().isoformat()
 
-        self._data = data
+            self._data = data
 
         return self
 
