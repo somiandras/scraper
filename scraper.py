@@ -182,8 +182,8 @@ class ModelSearch(BasePage):
 
     def __init__(self, url, brand, model):
         super().__init__(url, brand, model)
-        if url is None:
-            url = '{0}/{1}/{2}'.format(self.BASE_URL, self.brand, self.model)
+        if self.url is None:
+            self.url = '{0}/{1}/{2}'.format(self.BASE_URL, self.brand, self.model)
 
     def parse(self):
         if self._html is None:

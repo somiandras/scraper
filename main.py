@@ -6,14 +6,26 @@ import sys
 import json
 import logging
 from datetime import datetime
-from scraper import ModelSearch
 from pymongo import MongoClient
+import scraper
 
 MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://127.0.0.1:27017/used_cars')
 db = MongoClient(MONGODB_URI).get_database()
 
 
 def encode_keys(data):
+    '''
+    Replace long feature definitions with standardized labels from keys 
+    collection. If the definition is not in the keys collection, generate
+    new label and save it to the collection.
+
+    Params:  
+    `data`: ad data object to replace keys in  
+
+    Returns: `data` object with replaced keys
+    '''
+
+
     keys = db['keys']
     for top_key in ['details', 'features', 'other']:
         old_keys = list(data[top_key].keys())
@@ -36,36 +48,127 @@ def encode_keys(data):
     return data
 
 
-def save_ad_data(ad):
-    data = ad.data
-    if data is not None:
-        db_filter = {'url': data['url']}
-        current_price = data['details'].get('Vételár (Ft)', None)
-        if current_price is not None:
-            update = {
-                'price': current_price,
-                'date': datetime.today().isoformat()
-            }
+def save_data(data):
+    '''
+    Save ad data to database after replacing long keys with standardized
+    labels.
+
+    Params:  
+    `data`: ad data object  
+
+    Returns: `None`
+    '''
+
+    if data is None:
+        return False
+    db_filter = {'url': data['url']}
+    current_price = data['details'].get('Vételár (Ft)', None)
+    if current_price is not None:
+        update = {
+            'price': current_price,
+            'date': datetime.today().isoformat()
+        }
+    else:
+        update = None
+
+    db['cars'].update_one(db_filter,
+                            {'$setOnInsert': encode_keys(data),
+                                '$set': {'last_updated': datetime.today().isoformat()},
+                                '$push': {'updates': update}},
+                            upsert=True)
+
+
+def process(obj):
+    '''
+    Process page object according to its type: iterate through results
+    pages of a search page, iterate through ad pages of a results page or
+    save data from an ad page.
+
+    Params:  
+    `obj`: page object with type of `scraper.ModelSearch`,
+    `scraper.ResultsPage` or `scraper.AdPage`.  
+
+    Returns: boolean: whether the processing was successful (`True`) or 
+    resulted in error (`False`)
+
+    '''
+
+    if isinstance(obj, scraper.ModelSearch):
+        for page in obj.pages:
+            process(page)
+    
+    elif isinstance(obj, scraper.ResultsPage):
+        for ad in obj.ads:
+            process(ad)
+
+    elif isinstance(obj, scraper.AdPage):
+        save_data(obj.data)
+
+    else:
+        raise Exception('Illegal type: {}'.format(type(obj).__name__))
+
+    if obj.status and obj.status != 200:
+        # Call resulted in non-OK code
+        db['errors'].insert_one({'url': obj.url,
+                                 'brand': obj.brand,
+                                 'model': obj.model,
+                                 'type': type(obj).__name__,
+                                 'status': obj.status,
+                                 'last_occured': datetime.today().isoformat(),
+                                 'retried': False
+                                 })
+        return False
+    else:
+        # All good, process seems to be successful
+        return True
+
+
+def retry_errors():
+    '''
+    Retry downloading pages in errors collection with 5xx statuses.
+
+    Params: `None`  
+    Returns: `None`
+    '''
+
+    logging.info('Retrying errors from errors collection')
+    errors = db['errors'].find(
+        {'status': {'$gte': 500, '$lt': 600}, 'retried': False})
+    logging.info('{} errors found'.format(errors.count))
+    for error in errors:
+        # Reconstruct the object that resulted in the error
+        class_ = getattr(scraper, error['type'])
+        obj = class_(error['url'], error['brand'], error['model'])
+
+        result = process(obj)
+        if result:
+            # Successfully processed error, remove from collection
+            db['errors'].delete_one({'_id': error['_id']})
         else:
-            update = None
-        db['cars'].update_one(db_filter,
-                                {'$setOnInsert': encode_keys(data),
-                                 '$set': {'last_updated': datetime.today().isoformat()},
-                                 '$push': {'updates': update}},
-                                upsert=True)
+            # Still not OK, update retried flag
+            db['errors'].update_one(
+                {'_id': error['_id']}, {'$set': {'retried': True}})
+
 
 if __name__ == '__main__':
+    # Check for debugging option in arguments
     if '--debug' in sys.argv:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
 
+    # Load brands and models from external config
     with open('config.json', 'r') as conf_file:
         config = json.load(conf_file)
         MODELS = [(car['brand'], car['model']) for car in config['models']]
 
+    # Initiate search for the given brand/model pairs
     for brand, model in MODELS:
-        search = ModelSearch(brand, model)
-        for page in search.pages:
-            for ad in page.ads:
-                save_ad_data(ad)
+        search = scraper.ModelSearch(None, brand, model)
+        process(search)
+
+    # Retry 5xx errors
+    retry_errors()
+
+    logging.info('Finished for now, exiting...')
+    sys.exit(0)
