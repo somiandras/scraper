@@ -32,15 +32,12 @@ def encode_keys(data):
         for old_key in old_keys:
             saved_key = keys.find_one({'description': old_key})
             if saved_key is None:
-                logging.debug('{} is not in keys collection'.format(old_key))
                 count = keys.find({'type': top_key}).count()
                 new_key = '{}{:0>3}'.format(top_key[:2].upper(), count + 1)
-                logging.debug('Adding {} for {}'.format(new_key, old_key))
+                logger.debug('Adding {} for {}'.format(new_key, old_key))
                 keys.insert_one(
                     {'key': new_key, 'description': old_key, 'type': top_key})
             else:
-                logging.debug('{} found in keys collection as {}'.format(
-                    old_key, saved_key.get('key')))
                 new_key = saved_key.get('key')
             value = data[top_key].pop(old_key)
             data[top_key][new_key] = value
@@ -120,6 +117,7 @@ def process(obj):
         return False
     else:
         # All good, process seems to be successful
+        logger.info('Processed {}'.format(obj.url))
         return True
 
 
@@ -131,16 +129,18 @@ def retry_errors():
     Returns: `None`
     '''
 
-    logging.info('Retrying errors from errors collection')
+    logger.debug('Retrying errors from errors collection')
     errors = db['errors'].find(
         {'status': {'$gte': 500, '$lt': 600}, 'retried': False})
-    logging.info('{} errors found'.format(errors.count))
+    logger.info('{} errors found, retrying...'.format(errors.count))
+    count = 0
     for error in errors:
         # Reconstruct the object that resulted in the error
         class_ = getattr(scraper, error['type'])
         obj = class_(error['url'], error['brand'], error['model'])
 
         result = process(obj)
+        count += result
         if result:
             # Successfully processed error, remove from collection
             db['errors'].delete_one({'_id': error['_id']})
@@ -148,14 +148,37 @@ def retry_errors():
             # Still not OK, update retried flag
             db['errors'].update_one(
                 {'_id': error['_id']}, {'$set': {'retried': True}})
-
+        logger.info('{} erros corrected'.format(count))
+    
+    # Iterate on possible new errors
+    retry_errors()
 
 if __name__ == '__main__':
+    # Set up logger and console handler with formatting
+    logger = logging.getLogger()
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
     # Check for debugging option in arguments
     if '--debug' in sys.argv:
-        logging.basicConfig(level=logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
     else:
-        logging.basicConfig(level=logging.INFO)
+        logger.setLevel(logging.INFO)
+
+    # Check for --log and filename option in arguments
+    try:
+        index = sys.argv.index('--log')
+    except Exception:
+        pass
+    else:
+        # Add file handler to logging with the same level and formatter
+        filename = sys.argv[index + 1]
+        fh = logging.FileHandler(filename, mode='w')
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
 
     # Load brands and models from external config
     with open('config.json', 'r') as conf_file:

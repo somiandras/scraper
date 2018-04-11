@@ -7,6 +7,7 @@ from datetime import datetime
 import re
 import logging
 
+
 class BasePage:
     '''
     Provide download method and db connection for webpages.
@@ -28,18 +29,24 @@ class BasePage:
         self.url = url
         self.brand = brand
         self.model = model
+        self.logger = logging.getLogger(self._classname())
 
     def download(self):
+        self.logger.debug('Downloading {}'.format(self.url))
         r = requests.get(self.url, headers=self.HEADERS)
         self.status = r.status_code
         try:
             r.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            logging.error(e)
+            self.logger.error(e)
         else:
             self._html = r.text
         
         return self
+
+    @classmethod
+    def _classname(cls):
+        return cls.__name__
 
 
 class AdPage(BasePage):
@@ -57,6 +64,8 @@ class AdPage(BasePage):
         data['details'] = {}
         data['features'] = {}
         data['other'] = {}
+        
+        self.logger.debug('Parsing {}'.format(self.url))
         
         if self._html is None:
             self.download()
@@ -150,6 +159,8 @@ class ResultsPage(BasePage):
         if self._html is None:
             self.download()
 
+        self.logger.debug('Parsing {}'.format(self.url))
+        
         if self._html is not None:
             soup = BeautifulSoup(self._html, 'lxml')
             result_items = soup.find_all('div', class_='cim-kontener')
@@ -188,17 +199,19 @@ class ModelSearch(BasePage):
     def parse(self):
         if self._html is None:
             self.download()
+        
+        self.logger.debug('Parsing {}'.format(self.url))
 
         if self._html is not None:
             try:
                 soup = BeautifulSoup(self._html, 'lxml')
                 last_page = int(soup.find('li', class_='last').text)
             except AttributeError as e:
-                logging.error(e)
-                logging.error(self.url)
+                self.logger.error(e)
+                self.logger.error(self.url)
             except TypeError as e:
-                logging.error(e)
-                logging.error('self._html: {}'.format(self._html))
+                self.logger.error(e)
+                self.logger.error('self._html: {}'.format(self._html))
             else:
                 self._page_count = last_page
 
