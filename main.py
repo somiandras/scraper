@@ -129,29 +129,34 @@ def retry_errors():
     Returns: `None`
     '''
 
-    logger.debug('Retrying errors from errors collection')
     errors = db['errors'].find(
         {'status': {'$gte': 500, '$lt': 600}, 'retried': False})
-    logger.info('{} errors found, retrying...'.format(errors.count))
-    count = 0
-    for error in errors:
-        # Reconstruct the object that resulted in the error
-        class_ = getattr(scraper, error['type'])
-        obj = class_(error['url'], error['brand'], error['model'])
+    if errors.count() > 0:
+        logger.info('{} errors found, retrying...'.format(errors.count()))
+        count = 0
+        for error in errors:
+            # Reconstruct the object that resulted in the error
+            class_ = getattr(scraper, error['type'])
+            obj = class_(error['url'], error['brand'], error['model'])
 
-        result = process(obj)
-        count += result
-        if result:
-            # Successfully processed error, remove from collection
-            db['errors'].delete_one({'_id': error['_id']})
-        else:
-            # Still not OK, update retried flag
-            db['errors'].update_one(
-                {'_id': error['_id']}, {'$set': {'retried': True}})
-        logger.info('{} erros corrected'.format(count))
-    
-    # Iterate on possible new errors
-    retry_errors()
+            result = process(obj)
+            count += result
+            if result:
+                # Successfully processed error, remove from collection
+                db['errors'].delete_one({'_id': error['_id']})
+            else:
+                # Still not OK, update retried flag
+                db['errors'].update_one(
+                    {'_id': error['_id']}, {'$set': {'retried': True}})
+        
+        logger.info('{} errors corrected'.format(count))
+        
+        # Iterate on possible new errors
+        retry_errors()
+    else:
+        logger.info('All possible errors are corrected')
+        return True
+
 
 if __name__ == '__main__':
     # Set up logger and console handler with formatting
