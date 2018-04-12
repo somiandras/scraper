@@ -45,41 +45,11 @@ def encode_keys(data):
     return data
 
 
-def save_data(data):
-    '''
-    Save ad data to database after replacing long keys with standardized
-    labels.
-
-    Params:  
-    `data`: ad data object  
-
-    Returns: `None`
-    '''
-
-    if data is None:
-        return False
-    db_filter = {'url': data['url']}
-    current_price = data['details'].get('Vételár (Ft)', None)
-    if current_price is not None:
-        update = {
-            'price': current_price,
-            'date': datetime.today().isoformat()
-        }
-    else:
-        update = None
-
-    db['cars'].update_one(db_filter,
-                            {'$setOnInsert': encode_keys(data),
-                                '$set': {'last_updated': datetime.today().isoformat()},
-                                '$push': {'updates': update}},
-                            upsert=True)
-
-
 def process(obj):
     '''
     Process page object according to its type: iterate through results
     pages of a search page, iterate through ad pages of a results page or
-    save data from an ad page.
+    save data from an ad page, if the data is not already in the database.
 
     Params:  
     `obj`: page object with type of `scraper.ModelSearch`,
@@ -87,7 +57,6 @@ def process(obj):
 
     Returns: boolean: whether the processing was successful (`True`) or 
     resulted in error (`False`)
-
     '''
 
     if isinstance(obj, scraper.ModelSearch):
@@ -96,11 +65,23 @@ def process(obj):
     
     elif isinstance(obj, scraper.ResultsPage):
         for ad in obj.ads:
-            process(ad)
+            found = db['cars'].find_one({'url': ad.url})
+            if found is None:
+                process(ad)
+            else:
+                logger.info('Skipping {}'.format(obj.url))
+                db['cars'].update_one(
+                    {'url': ad.url},
+                    {'$set': {'last_updated': datetime.today().isoformat()}}
+                )
 
     elif isinstance(obj, scraper.AdPage):
-        save_data(obj.data)
-
+        if obj.data is not None:
+            db['cars'].update_one({'url': obj.data['url']},
+                                  {'$setOnInsert': encode_keys(obj.data),
+                                   '$set':
+                                       {'last_updated': datetime.today().isoformat()}},
+                                  upsert=True)
     else:
         raise Exception('Illegal type: {}'.format(type(obj).__name__))
 
@@ -113,7 +94,7 @@ def process(obj):
                                  'status': obj.status,
                                  'last_occured': datetime.today().isoformat(),
                                  'retried': False
-                                 })
+                                })
         return False
     else:
         # All good, process seems to be successful
@@ -131,6 +112,7 @@ def retry_errors():
 
     errors = db['errors'].find(
         {'status': {'$gte': 500, '$lt': 600}, 'retried': False})
+
     if errors.count() > 0:
         logger.info('{} errors found, retrying...'.format(errors.count()))
         count = 0
@@ -154,7 +136,7 @@ def retry_errors():
         # Iterate on possible new errors
         retry_errors()
     else:
-        logger.info('All possible errors are corrected')
+        logger.info('All fixable errors are corrected')
         return True
 
 
