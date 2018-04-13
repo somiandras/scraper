@@ -69,7 +69,7 @@ def process(obj):
             if found is None:
                 process(ad)
             else:
-                logger.info('Skipping {}'.format(obj.url))
+                logger.info('Skipping {}'.format(ad.url))
                 db['cars'].update_one(
                     {'url': ad.url},
                     {'$set': {'last_updated': datetime.today().isoformat()}}
