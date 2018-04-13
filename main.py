@@ -25,7 +25,6 @@ def encode_keys(data):
     Returns: `data` object with replaced keys
     '''
 
-
     keys = db['keys']
     for top_key in ['details', 'features', 'other']:
         old_keys = list(data[top_key].keys())
@@ -69,7 +68,7 @@ def process(obj):
             if found is None:
                 process(ad)
             else:
-                logger.info('Skipping {}'.format(ad.url))
+                logger.debug('Skipping {}'.format(ad.url))
                 db['cars'].update_one(
                     {'url': ad.url},
                     {'$set': {'last_updated': datetime.today().isoformat()}}
@@ -86,18 +85,20 @@ def process(obj):
         raise Exception('Illegal type: {}'.format(type(obj).__name__))
 
     if obj.status and obj.status != 200:
-        # Call resulted in non-OK code
-        db['errors'].insert_one({'url': obj.url,
-                                 'brand': obj.brand,
-                                 'model': obj.model,
-                                 'type': type(obj).__name__,
-                                 'status': obj.status,
-                                 'last_occured': datetime.today().isoformat(),
-                                 'retried': False
-                                })
+        # Call resulted in non-OK code, add/update error entry
+        db['errors'].update_one({'url': obj.url}, 
+                                {'$setOnInsert': {'url': obj.url,
+                                                  'brand': obj.brand,
+                                                  'model': obj.model,
+                                                  'type': type(obj).__name__,
+                                                  'attempts': 0},
+                                 '$inc': {'attempts': 1},
+                                 '$set': {'last_occured': datetime.today().isoformat(),
+                                          'last_status': obj.status}
+                                }, upsert=True)
         return False
     else:
-        # All good, process seems to be successful
+        # All good, processing seems to be successful
         logger.info('Processed {}'.format(obj.url))
         return True
 
@@ -111,7 +112,7 @@ def retry_errors():
     '''
 
     errors = db['errors'].find(
-        {'status': {'$gte': 500, '$lt': 600}, 'retried': False})
+        {'status': {'$gte': 500, '$lt': 600}, 'attempts': {'$lt': 2}})
 
     if errors.count() > 0:
         logger.info('{} errors found, retrying...'.format(errors.count()))
@@ -121,15 +122,12 @@ def retry_errors():
             class_ = getattr(scraper, error['type'])
             obj = class_(error['url'], error['brand'], error['model'])
 
+            # Process it
             result = process(obj)
-            count += result
             if result:
-                # Successfully processed error, remove from collection
+                # Successfully fixed error, remove from collection
                 db['errors'].delete_one({'_id': error['_id']})
-            else:
-                # Still not OK, update retried flag
-                db['errors'].update_one(
-                    {'_id': error['_id']}, {'$set': {'retried': True}})
+            count += result
         
         logger.info('{} errors corrected'.format(count))
         
