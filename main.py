@@ -165,6 +165,9 @@ if __name__ == '__main__':
         fh.setFormatter(formatter)
         logger.addHandler(fh)
 
+    # Empty error collection
+    db['errors'].delete_many({})
+
     # Load brands and models from external config
     with open('config.json', 'r') as conf_file:
         config = json.load(conf_file)
