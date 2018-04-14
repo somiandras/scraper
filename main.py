@@ -90,8 +90,7 @@ def process(obj):
                                 {'$setOnInsert': {'url': obj.url,
                                                   'brand': obj.brand,
                                                   'model': obj.model,
-                                                  'type': type(obj).__name__,
-                                                  'attempts': 0},
+                                                  'type': type(obj).__name__},
                                  '$inc': {'attempts': 1},
                                  '$set': {'last_occured': datetime.today().isoformat(),
                                           'last_status': obj.status}
