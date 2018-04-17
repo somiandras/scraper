@@ -111,7 +111,7 @@ def retry_errors():
     '''
 
     errors = db['errors'].find(
-        {'status': {'$gte': 500, '$lt': 600}, 'attempts': {'$lt': 2}})
+        {'last_status': {'$gte': 500, '$lt': 600}, 'attempts': {'$lt': 2}})
 
     if errors.count() > 0:
         logger.info('{} errors found, retrying...'.format(errors.count()))
