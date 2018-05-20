@@ -21,6 +21,14 @@
         {
             "brand": "volvo",
             "model": "s40"
+        },
+        {
+            "brand": "volvo",
+            "model": "v50"
+        },
+        {
+            "brand": "opel",
+            "model": "astra"
         }
     ]
 }
