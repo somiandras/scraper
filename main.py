@@ -13,6 +13,29 @@ MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://127.0.0.1:27017/used_cars
 db = MongoClient(MONGODB_URI).get_database()
 
 
+CHARMAP = {
+    'á': 'a',
+    'é': 'e',
+    'ó': 'o',
+    'ö': 'o',
+    'ő': 'o',
+    'ú': 'u',
+    'ü': 'u',
+    'ű': 'u',
+    'í': 'i',
+    '.': '',
+    ' ': '_',
+    '!': '',
+    '?': '',
+    ':': '',
+    ';': '',
+    ',': '',
+    '(': '',
+    ')': '',
+    '-': '_'
+}
+
+
 def encode_keys(data):
     '''
     Replace long feature definitions with standardized labels from keys 
@@ -33,9 +56,14 @@ def encode_keys(data):
             if saved_key is None:
                 count = keys.find({'type': top_key}).count()
                 new_key = '{}{:0>3}'.format(top_key[:2].upper(), count + 1)
+                name = ''.join([CHARMAP.get(c, c) for c in old_key.lower()])
                 logger.debug('Adding {} for {}'.format(new_key, old_key))
                 keys.insert_one(
-                    {'key': new_key, 'description': old_key, 'type': top_key})
+                    {'key': new_key,
+                    'description': old_key,
+                    'type': top_key,
+                    'name': name}
+                )
             else:
                 new_key = saved_key.get('key')
             value = data[top_key].pop(old_key)
